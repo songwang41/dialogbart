@@ -61,7 +61,7 @@ class SummarizationModule(BaseTransformer):
             if hparams.sortish_sampler:
                 raise ValueError("--sortish_sampler and --max_tokens_per_batch may not be used simultaneously")
 
-        super().__init__(hparams, num_labels=None, mode=self.mode, **kwargs)
+        super().__init__(hparams, num_labels=None, mode=mode, **kwargs)
         use_task_specific_params(self.model, "summarization")
         save_git_info(self.hparams.output_dir)
         self.metrics_save_path = Path(self.output_dir) / "metrics.json"
