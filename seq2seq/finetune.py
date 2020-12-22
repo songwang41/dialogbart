@@ -16,7 +16,6 @@ import torch
 from torch.utils.data import DataLoader
 
 from callbacks import Seq2SeqLoggingCallback, get_checkpoint_callback, get_early_stopping_callback
-from transformers import MBartTokenizer, T5ForConditionalGeneration
 from transformers.models.bart.modeling_bart import shift_tokens_right
 from utils import (
     ROUGE_KEYS,
@@ -101,9 +100,6 @@ class SummarizationModule(BaseTransformer):
         self.hparams.git_sha = get_git_info()["repo_sha"]
         self.num_workers = hparams.num_workers
         self.decoder_start_token_id = None  # default to config
-        if self.model.config.decoder_start_token_id is None and isinstance(self.tokenizer, MBartTokenizer):
-            self.decoder_start_token_id = self.tokenizer.lang_code_to_id[hparams.tgt_lang]
-            self.model.config.decoder_start_token_id = self.decoder_start_token_id
         self.dataset_class = (
             Seq2SeqDataset if hasattr(self.tokenizer, "prepare_seq2seq_batch") else LegacySeq2SeqDataset
         )
@@ -139,10 +135,7 @@ class SummarizationModule(BaseTransformer):
         pad_token_id = self.tokenizer.pad_token_id
         src_ids, src_mask = batch["input_ids"], batch["attention_mask"]
         tgt_ids = batch["labels"]
-        if isinstance(self.model, T5ForConditionalGeneration):
-            decoder_input_ids = self.model._shift_right(tgt_ids)
-        else:
-            decoder_input_ids = shift_tokens_right(tgt_ids, pad_token_id)
+        decoder_input_ids = shift_tokens_right(tgt_ids, pad_token_id)
         if not self.already_saved_batch:  # This would be slightly better if it only happened on rank zero
             batch["decoder_input_ids"] = decoder_input_ids
             self.save_readable_batch(batch)
