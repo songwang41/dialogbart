@@ -77,7 +77,9 @@ class BaseTransformer(pl.LightningModule):
         # self.save_hyperparameters()
         # can also expand arguments into trainer signature for easier reading
 
+        # This will add all the parameters to self.hparams
         self.save_hyperparameters(hparams)
+
         self.step_count = 0
         self.output_dir = Path(self.hparams.output_dir)
         cache_dir = self.hparams.cache_dir if self.hparams.cache_dir else None
@@ -384,7 +386,9 @@ def generic_train(
         checkpoint_callback=checkpoint_callback,
         **train_params,
     )
-
+    # from_argparse_args is a method in from pytorch_lightning.trainer.properties import TrainerProperties
+    # it will first parse all the other parameters and merge them in to args
+    # then it will train cls(**args) i.e. pl.Trainer(**args)
     if args.do_train:
         trainer.fit(model)
 

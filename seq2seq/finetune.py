@@ -61,15 +61,24 @@ class SummarizationModule(BaseTransformer):
             if hparams.sortish_sampler:
                 raise ValueError("--sortish_sampler and --max_tokens_per_batch may not be used simultaneously")
 
+        # __init_ will save parameters into self.hparams, 
+        # and setup self.config, self.tokenizer, self.model, mainly with hparams.model_name_or_path, 
+        # self.output_dir, self.step_count
         super().__init__(hparams, num_labels=None, mode=mode, **kwargs)
+
+        #load self.model.config.task_specific_params if any and update them into self.config.xxx
         use_task_specific_params(self.model, "summarization")
+        #create a file called Path(self.output_dir) / "git_log.json"
+        # {'repo_id':xx, 'repo_sha':xx, 'repo_branch': xxx, 'hostname':xxx}
         save_git_info(self.hparams.output_dir)
         self.metrics_save_path = Path(self.output_dir) / "metrics.json"
         self.hparams_save_path = Path(self.output_dir) / "hparams.pkl"
+        # save parameters into the pickle file
         pickle_save(self.hparams, self.hparams_save_path)
+
         self.step_count = 0
         self.metrics = defaultdict(list)
-        self.model_type = self.config.model_type
+        self.model_type = self.config.model_type # e.g. 'bart'
         self.vocab_size = self.config.tgt_vocab_size if self.model_type == "fsmt" else self.config.vocab_size
 
         self.dataset_kwargs: dict = dict(
@@ -77,6 +86,9 @@ class SummarizationModule(BaseTransformer):
             max_source_length=self.hparams.max_source_length,
             prefix=self.model.config.prefix or "",
         )
+        #e.g. "n_test": -1 
+        #     "n_train": -1
+        #     "n_val": 2000
         n_observations_per_split = {
             "train": self.hparams.n_train,
             "val": self.hparams.n_val,
@@ -89,8 +101,10 @@ class SummarizationModule(BaseTransformer):
             "val": self.hparams.val_max_target_length,
             "test": self.hparams.test_max_target_length,
         }
+
         assert self.target_lens["train"] <= self.target_lens["val"], f"target_lens: {self.target_lens}"
         assert self.target_lens["train"] <= self.target_lens["test"], f"target_lens: {self.target_lens}"
+        # freeze embedings, by setting the parameters.requires_grad = False
         if self.hparams.freeze_embeds:
             freeze_embeds(self.model)
         if self.hparams.freeze_encoder:
@@ -98,8 +112,9 @@ class SummarizationModule(BaseTransformer):
             assert_all_frozen(self.model.get_encoder())
 
         self.hparams.git_sha = get_git_info()["repo_sha"]
-        self.num_workers = hparams.num_workers
+        self.num_workers = hparams.num_workers # e.g. 4
         self.decoder_start_token_id = None  # default to config
+        # if the tokenizer has property/method 'prepare_seq2seq_batch' use Seq2seqDataset, bart has this method
         self.dataset_class = (
             Seq2SeqDataset if hasattr(self.tokenizer, "prepare_seq2seq_batch") else LegacySeq2SeqDataset
         )
@@ -399,6 +414,7 @@ def main(args, model=None) -> SummarizationModule:
         es_callback = False
 
     lower_is_better = args.val_metric == "loss"
+    # train the model
     trainer: pl.Trainer = generic_train(
         model,
         args,
@@ -409,7 +425,16 @@ def main(args, model=None) -> SummarizationModule:
         early_stopping_callback=es_callback,
         logger=logger,
     )
+    #when logger = True, 
+    # self.trainer.logger = TensorBoardLogger(
+    #           save_dir=self.trainer.default_root_dir, version=version, name='lightning_logs'
+    #        )
+    
+
+    # This is dumplidated with Summarization(args), with newest version of model.hparams
     pickle_save(model.hparams, model.output_dir / "hparams.pkl")
+
+    # if not set up -dd_predict, return and finish
     if not args.do_predict:
         return model
 
