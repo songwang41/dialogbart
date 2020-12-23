@@ -23,15 +23,15 @@ import torch.nn.functional as F
 from torch import Tensor, nn
 from torch.nn import CrossEntropyLoss
 
-from ..activations import ACT2FN
-from ..file_utils import (
+from ...activations import ACT2FN
+from ...file_utils import (
     add_code_sample_docstrings,
     add_end_docstrings,
     add_start_docstrings,
     add_start_docstrings_to_model_forward,
     replace_return_docstrings,
 )
-from ..modeling_outputs import (
+from ...modeling_outputs import (
     BaseModelOutput,
     BaseModelOutputWithPastAndCrossAttentions,
     Seq2SeqLMOutput,
@@ -39,8 +39,8 @@ from ..modeling_outputs import (
     Seq2SeqQuestionAnsweringModelOutput,
     Seq2SeqSequenceClassifierOutput,
 )
-from ..modeling_utils import PreTrainedModel
-from ..utils import logging
+from ...modeling_utils import PreTrainedModel
+from ...utils import logging
 from .configuration_bart import BartConfig
 
 
@@ -308,9 +308,12 @@ class BartEncoder(nn.Module):
         embed_dim = embed_tokens.embedding_dim
         self.embed_scale = math.sqrt(embed_dim) if config.scale_embedding else 1.0
         self.padding_idx = embed_tokens.padding_idx
+        self.turn_token_id = config.turn_token_id
         self.max_source_positions = config.max_position_embeddings
-
+        self.max_turn_embeddings = config.max_turn_embeddings
+        self.max_speaker_embeddings = config.max_speaker_embeddings
         self.embed_tokens = embed_tokens
+
         if config.static_position_embeddings:
             self.embed_positions = SinusoidalPositionalEmbedding(
                 config.max_position_embeddings, embed_dim, self.padding_idx
@@ -322,6 +325,23 @@ class BartEncoder(nn.Module):
                 self.padding_idx,
                 config.extra_pos_embeddings,
             )
+
+        if self.turn_token_id is not None:
+            self.embed_turns = LearnedTurnEmbedding(
+                config.max_turn_embeddings,
+                embed_dim,
+                self.padding_idx,
+                self.turn_token_id,
+                config.extra_pos_embeddings,
+            )
+            self.embed_speakers = LearnedSpeakerEmbedding(
+                config.max_speaker_embeddings,
+                embed_dim,
+                self.padding_idx,
+                self.turn_token_id,
+                config.extra_pos_embeddings,
+            )
+
         self.layers = nn.ModuleList([EncoderLayer(config) for _ in range(config.encoder_layers)])
         self.layernorm_embedding = LayerNorm(embed_dim) if config.normalize_embedding else nn.Identity()
         # mbart has one extra layer_norm
@@ -352,6 +372,12 @@ class BartEncoder(nn.Module):
         inputs_embeds = self.embed_tokens(input_ids) * self.embed_scale
         embed_pos = self.embed_positions(input_ids)
         x = inputs_embeds + embed_pos
+
+        if self.turn_token_id is not None:
+            embed_t = self.embed_turns(input_ids)
+            ebmed_s = self.embed_speakers(input_ids)
+            x = x + embed_t + ebmed_s
+
         x = self.layernorm_embedding(x)
         x = F.dropout(x, p=self.dropout, training=self.training)
 
@@ -814,6 +840,152 @@ class LearnedPositionalEmbedding(nn.Embedding):
             # starts at 0, ends at 1-seq_len
             positions = torch.arange(seq_len, dtype=torch.long, device=self.weight.device)
         return super().forward(positions + self.offset)
+
+class LearnedTurnEmbedding(nn.Embedding):
+    """
+    This module learns Turn position embeddings up to a fixed maximum size. Padding ids are ignored by setting
+    the embedding as 0.0's
+    >>> turn_embs = LearnedTurnEmbedding(150, 3, 1, 1721)
+    >>> text = " Issue | Agent : a  | Customer b b | Agent c c"
+    >>> input_ids = tokenizer([text], return_tensors='pt',padding="max_length", max_length = 20)['input_ids']
+    tensor([[    0, 25422,  1721, 18497,  4832,    10,  1437,  1721, 19458,   741,
+           741,  1721, 18497,   740,   740,     2,     1,     1,     1,     1]])
+    >>> turn_embs.get_turn_ids(input_ids)
+    tensor([[2, 2, 3, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 5, 1, 1, 1, 1]])
+    >>> turn_embs.get_turn_ids(input_ids)
+    tensor([[[ 0.3489, -2.3656,  0.4380],
+         [ 0.3489, -2.3656,  0.4380],
+         [ 0.5254, -0.4979,  1.1205],
+         [ 0.5254, -0.4979,  1.1205],
+         [ 0.5254, -0.4979,  1.1205],
+         [ 0.5254, -0.4979,  1.1205],
+         [ 0.5254, -0.4979,  1.1205],
+         [ 0.3352,  2.6305, -1.7175],
+         [ 0.3352,  2.6305, -1.7175],
+         [ 0.3352,  2.6305, -1.7175],
+         [ 0.3352,  2.6305, -1.7175],
+         [-0.7182,  0.7174, -0.1927],
+         [-0.7182,  0.7174, -0.1927],
+         [-0.7182,  0.7174, -0.1927],
+         [-0.7182,  0.7174, -0.1927],
+         [-0.7182,  0.7174, -0.1927],
+         [ 0.0000,  0.0000,  0.0000],
+         [ 0.0000,  0.0000,  0.0000],
+         [ 0.0000,  0.0000,  0.0000],
+         [ 0.0000,  0.0000,  0.0000]]], grad_fn=<EmbeddingBackward>)
+    """
+
+    def __init__(self, num_embeddings: int, embedding_dim: int, padding_idx: int, turn_token_id: int, offset: int = 2):
+        self.turn_token_id = turn_token_id 
+        assert turn_token_id is not None
+        assert padding_idx is not None
+        num_embeddings += offset #embedding 0 is reserved for paddings
+        super().__init__(num_embeddings, embedding_dim, padding_idx=padding_idx)
+
+    #turn_token_id = tokenizer.convert_tokens_to_ids('Ġ|')
+    #padding_idx = tokenizer.convert_tokens_to_ids('<pad>')
+    def get_turn_ids(self, input_ids):
+        bsz, seq_len = input_ids.shape[:2]
+        turn_ids = torch.ones((bsz, seq_len)).to(input_ids.device) * (input_ids==self.turn_token_id)
+        turn_ids = torch.cumsum(turn_ids, dim =1)
+        if turn_ids[0][0] == 0:
+            #turn id starts from 2, since 1 is saved for padding turns due to the hack in BART
+            turn_ids = turn_ids + 2
+        elif  turn_ids[0][0] == 1:
+            turn_ids = turn_ids + 1
+        turn_ids = turn_ids *(input_ids != self.padding_idx) #setting padding turn as 0
+        turn_ids[turn_ids >= self.num_embeddings] = self.num_embeddings-1 # truncate number of turns at self.num_embeddings
+        turn_ids = turn_ids.type(torch.long)
+        return turn_ids
+
+    def forward(self, input_ids, use_cache=False):
+        """Input is expected to be of size [bsz x seqlen].
+        Output is turn embeddings of size [bsz x seqlen x emb_dim]."""
+        # turn id should start from 1, 0 is save for padding_idx
+        turn_ids = self.get_turn_ids(input_ids) #same device as input_ids
+        #turn_ids = turn_ids.to(self.weight.device)
+        return super().forward(turn_ids)
+
+
+class LearnedSpeakerEmbedding(nn.Embedding):
+    """
+    This module learns Turn position embeddings up to a fixed maximum size. Padding ids are ignored by setting
+    the embedding as 0.0's
+    >>> speaker_embs = LearnedSpeakerEmbedding(10, 3, 1, 1721)
+    >>> text = " Issue | Agent : a  | Customer : b b | Agent : c c"
+    >>> input_ids = tokenizer([text], return_tensors='pt',padding="max_length", max_length = 20)['input_ids']
+    tensor([[    0, 25422,  1721, 18497,  4832,    10,  1437,  1721, 19458,  4832,
+           741,   741,  1721, 18497,  4832,   740,   740,     2,     1,     1]])
+    >>> speaker_embs.get_speaker_ids(input_ids)
+    tensor([[0, 0, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 2, 2, 2, 2, 2, 2, 1, 1]])
+    >>> speaker_embs(input_ids)
+    tensor([[[ 1.2214, -2.1971,  0.1446],
+         [ 1.2214, -2.1971,  0.1446],
+         [-1.0182,  0.3928,  1.5586],
+         [-1.0182,  0.3928,  1.5586],
+         [-1.0182,  0.3928,  1.5586],
+         [-1.0182,  0.3928,  1.5586],
+         [-1.0182,  0.3928,  1.5586],
+         [-0.3213, -0.8318, -0.6791],
+         [-0.3213, -0.8318, -0.6791],
+         [-0.3213, -0.8318, -0.6791],
+         [-0.3213, -0.8318, -0.6791],
+         [-0.3213, -0.8318, -0.6791],
+         [-1.0182,  0.3928,  1.5586],
+         [-1.0182,  0.3928,  1.5586],
+         [-1.0182,  0.3928,  1.5586],
+         [-1.0182,  0.3928,  1.5586],
+         [-1.0182,  0.3928,  1.5586],
+         [-1.0182,  0.3928,  1.5586],
+         [ 0.0000,  0.0000,  0.0000],
+         [ 0.0000,  0.0000,  0.0000]]], grad_fn=<EmbeddingBackward>)
+    """
+
+    def __init__(self, num_embeddings: int, embedding_dim: int, padding_idx: int, turn_token_id: int, offset: int = 2):
+        self.turn_token_id = turn_token_id
+        assert turn_token_id is not None
+        assert padding_idx is not None
+        num_embeddings += offset # embedding 0 is reserved for paddings
+        super().__init__(num_embeddings, embedding_dim, padding_idx=padding_idx)
+
+    #turn_token_id = tokenizer.convert_tokens_to_ids('Ġ|')
+    #padding_idx = tokenizer.convert_tokens_to_ids('<pad>')
+    #self = {'padding_idx':padding_idx, 'turn_token_id':turn_start_id, 'num_embeddings':10+2}
+    def get_speaker_ids(self, input_ids):
+        arr = torch.zeros(input_ids.shape).to(input_ids.device)
+        idxes_of_turn_token = torch.where(input_ids==self.turn_token_id)
+        rows, cols = idxes_of_turn_token[0], idxes_of_turn_token[1]
+        roles_map = {} #batch-wise
+        for i in range(len(rows)):
+            x, y = rows[i].item(), cols[i].item()
+            #next position
+            if i+1 < len(rows):
+                x1, y1 = (rows[i+1].item(), cols[i+1].item())
+            else:
+                x1, y1 = -1, -1
+            role = input_ids[x][y+1].item()
+            if not role in roles_map:
+                roles_map[role] = len(roles_map)+1
+            if x1 == x:
+                arr[x][y:y1] = roles_map[role]
+            else:
+                arr[x][y:] = roles_map[role]
+        if arr[0][0] ==0: # the beginning part is not starting with a speaker symbol e.g. " Issue | Agent: ", the speaker part starts with 2
+            arr[arr>0] += 1
+        elif arr[0][0] ==1: # the beginning part is starting with a speaker symbol e.g. " | Agent: ", shift to start with 2
+            arr += 1
+        arr[arr >= self.num_embeddings] = self.num_embeddings -1 #truncate to make sure not exceeding the num_beddings
+        arr[input_ids==self.padding_idx] = 1 #bart is using padding_idx = 1
+        return arr.type(torch.long)
+
+    def forward(self, input_ids, use_cache=False):
+        """Input is expected to be of size [bsz x seqlen].
+        Output is speaker embeddings of size [bsz x seqlen x emb_dim].
+        """
+        # turn id should start from 1, 0 is save for padding_idx
+        spaker_ids = self.get_speaker_ids(input_ids) #same device as input_ids
+        #turn_ids = turn_ids.to(self.weight.device)
+        return super().forward(spaker_ids)
 
 
 def LayerNorm(normalized_shape, eps=1e-5, elementwise_affine=True):
