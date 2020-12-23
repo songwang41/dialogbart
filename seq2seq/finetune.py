@@ -51,7 +51,7 @@ class SummarizationModule(BaseTransformer):
     loss_names = ["loss"]
     metric_names = ROUGE_KEYS
     default_val_metric = "rouge2"
-
+    #these variables will be added to self.* automatically
     def __init__(self, hparams, **kwargs):
         if hparams.sortish_sampler and hparams.gpus > 1:
             hparams.replace_sampler_ddp = False
@@ -64,7 +64,7 @@ class SummarizationModule(BaseTransformer):
         # __init_ will save parameters into self.hparams, 
         # and setup self.config, self.tokenizer, self.model, mainly with hparams.model_name_or_path, 
         # self.output_dir, self.step_count
-        super().__init__(hparams, num_labels=None, mode=mode, **kwargs)
+        super().__init__(hparams, num_labels=None, mode=self.mode, **kwargs)
 
         #load self.model.config.task_specific_params if any and update them into self.config.xxx
         use_task_specific_params(self.model, "summarization")
