@@ -23,15 +23,15 @@ import torch.nn.functional as F
 from torch import Tensor, nn
 from torch.nn import CrossEntropyLoss
 
-from ...activations import ACT2FN
-from ...file_utils import (
+from transformers.activations import ACT2FN
+from transformers.file_utils import (
     add_code_sample_docstrings,
     add_end_docstrings,
     add_start_docstrings,
     add_start_docstrings_to_model_forward,
     replace_return_docstrings,
 )
-from ...modeling_outputs import (
+from transformers.modeling_outputs import (
     BaseModelOutput,
     BaseModelOutputWithPastAndCrossAttentions,
     Seq2SeqLMOutput,
@@ -39,18 +39,18 @@ from ...modeling_outputs import (
     Seq2SeqQuestionAnsweringModelOutput,
     Seq2SeqSequenceClassifierOutput,
 )
-from ...modeling_utils import PreTrainedModel
-from ...utils import logging
-from .configuration_bart import BartConfig
+from transformers.modeling_utils import PreTrainedModel
+from transformers.utils import logging
+from .configuration_dialogbart import DialogBartConfig
 
 
 logger = logging.get_logger(__name__)
 
-_CONFIG_FOR_DOC = "BartConfig"
-_TOKENIZER_FOR_DOC = "BartTokenizer"
+_CONFIG_FOR_DOC = "DialogBartConfig"
+_TOKENIZER_FOR_DOC = "DialogDialogBartTokenizer"
 
 
-BART_PRETRAINED_MODEL_ARCHIVE_LIST = [
+DIALOGBART_PRETRAINED_MODEL_ARCHIVE_LIST = [
     "facebook/bart-base",
     "facebook/bart-large",
     "facebook/bart-large-mnli",
@@ -61,7 +61,7 @@ BART_PRETRAINED_MODEL_ARCHIVE_LIST = [
 # This list is incomplete. See all BART models at https://huggingface.co/models?filter=bart
 
 
-BART_START_DOCSTRING = r"""
+DIALOGBART_START_DOCSTRING = r"""
 
     This model inherits from :class:`~transformers.PreTrainedModel`. Check the superclass documentation for the generic
     methods the library implements for all its model (such as downloading or saving, resizing the input embeddings,
@@ -72,7 +72,7 @@ BART_START_DOCSTRING = r"""
     general usage and behavior.
 
     Parameters:
-        config (:class:`~transformers.BartConfig`): Model configuration class with all the parameters of the model.
+        config (:class:`~transformers.DialogBartConfig`): Model configuration class with all the parameters of the model.
             Initializing with a config file does not load the weights associated with the model, only the
             configuration. Check out the :meth:`~transformers.PreTrainedModel.from_pretrained` method to load the model
             weights.
@@ -82,11 +82,11 @@ BART_START_DOCSTRING = r"""
 BART_GENERATION_EXAMPLE = r"""
     Summarization example::
 
-        >>> from transformers import BartTokenizer, BartForConditionalGeneration, BartConfig
+        >>> from transformers import DialogBartTokenizer, DialogBartForConditionalGeneration, DialogBartConfig
 
         >>> # see ``examples/summarization/bart/run_eval.py`` for a longer example
-        >>> model = BartForConditionalGeneration.from_pretrained('facebook/bart-large-cnn')
-        >>> tokenizer = BartTokenizer.from_pretrained('facebook/bart-large-cnn')
+        >>> model = DialogBartForConditionalGeneration.from_pretrained('facebook/bart-large-cnn')
+        >>> tokenizer = DialogBartTokenizer.from_pretrained('facebook/bart-large-cnn')
 
         >>> ARTICLE_TO_SUMMARIZE = "My friends are cool but they eat too many carbs."
         >>> inputs = tokenizer([ARTICLE_TO_SUMMARIZE], max_length=1024, return_tensors='pt')
@@ -97,13 +97,13 @@ BART_GENERATION_EXAMPLE = r"""
 
 """
 
-BART_INPUTS_DOCSTRING = r"""
+DIALOGBART_INPUTS_DOCSTRING = r"""
     Args:
         input_ids (:obj:`torch.LongTensor` of shape :obj:`(batch_size, sequence_length)`):
             Indices of input sequence tokens in the vocabulary. Padding will be ignored by default should you provide
             it.
 
-            Indices can be obtained using :class:`~transformers.BartTokenizer`. See
+            Indices can be obtained using :class:`~transformers.DialogBartTokenizer`. See
             :meth:`transformers.PreTrainedTokenizer.encode` and :meth:`transformers.PreTrainedTokenizer.__call__` for
             details.
 
@@ -182,8 +182,10 @@ def _prepare_bart_decoder_inputs(
     return decoder_input_ids, decoder_padding_mask, causal_mask
 
 
-class PretrainedBartModel(PreTrainedModel):
-    config_class = BartConfig
+class PretrainedDialogBartModel(PreTrainedModel):
+    #PreTrainedModel inherit from nn.Module, ModuleUtilsMixin, GenerationMixin
+    #self.config, self.name_or_path = config.name_or_path to give pretrained weights if given
+    config_class = DialogBartConfig
     base_model_prefix = "model"
 
     def _init_weights(self, module):
@@ -238,7 +240,7 @@ def make_padding_mask(input_ids, padding_idx=1):
 
 
 class EncoderLayer(nn.Module):
-    def __init__(self, config: BartConfig):
+    def __init__(self, config: DialogBartConfig):
         super().__init__()
         self.embed_dim = config.d_model
         self.self_attn = Attention(self.embed_dim, config.encoder_attention_heads, dropout=config.attention_dropout)
@@ -290,16 +292,16 @@ class EncoderLayer(nn.Module):
         return x, attn_weights
 
 
-class BartEncoder(nn.Module):
+class DialogBartEncoder(nn.Module):
     """
     Transformer encoder consisting of *config.encoder_layers* self attention layers. Each layer is a
     :class:`EncoderLayer`.
 
     Args:
-        config: BartConfig
+        config: DialogBartConfig
     """
 
-    def __init__(self, config: BartConfig, embed_tokens):
+    def __init__(self, config: DialogBartConfig, embed_tokens):
         super().__init__()
 
         self.dropout = config.dropout
@@ -416,7 +418,7 @@ class BartEncoder(nn.Module):
 
 
 class DecoderLayer(nn.Module):
-    def __init__(self, config: BartConfig):
+    def __init__(self, config: DialogBartConfig):
         super().__init__()
         self.embed_dim = config.d_model
 
@@ -508,16 +510,16 @@ class DecoderLayer(nn.Module):
         )  # layer_state = cache for decoding
 
 
-class BartDecoder(nn.Module):
+class DialogDecoder(nn.Module):
     """
     Transformer decoder consisting of *config.decoder_layers* layers. Each layer is a :class:`DecoderLayer`
 
     Args:
-        config: BartConfig
+        config: DialogBartConfig
         embed_tokens (torch.nn.Embedding): output embedding
     """
 
-    def __init__(self, config: BartConfig, embed_tokens: nn.Embedding):
+    def __init__(self, config: DialogBartConfig, embed_tokens: nn.Embedding):
         super().__init__()
         self.dropout = config.dropout
         self.layerdrop = config.decoder_layerdrop
@@ -790,7 +792,7 @@ class Attention(nn.Module):
         return new_K, new_V
 
 
-class BartClassificationHead(nn.Module):
+class DialogBartClassificationHead(nn.Module):
     """Head for sentence-level classification tasks."""
 
     # This can trivially be shared with RobertaClassificationHead
@@ -1011,21 +1013,21 @@ def _get_shape(t):
 
 @add_start_docstrings(
     "The bare BART Model outputting raw hidden-states without any specific head on top.",
-    BART_START_DOCSTRING,
+    DIALOGBART_START_DOCSTRING,
 )
-class BartModel(PretrainedBartModel):
-    def __init__(self, config: BartConfig):
+class DialogBartModel(PretrainedDialogBartModel):
+    def __init__(self, config: DialogBartConfig):
         super().__init__(config)
 
         padding_idx, vocab_size = config.pad_token_id, config.vocab_size
         self.shared = nn.Embedding(vocab_size, config.d_model, padding_idx)
 
-        self.encoder = BartEncoder(config, self.shared)
-        self.decoder = BartDecoder(config, self.shared)
+        self.encoder = DialogBartEncoder(config, self.shared)
+        self.decoder = DialogDecoder(config, self.shared)
 
         self.init_weights()
 
-    @add_start_docstrings_to_model_forward(BART_INPUTS_DOCSTRING)
+    @add_start_docstrings_to_model_forward(DIALOGBART_INPUTS_DOCSTRING)
     @add_code_sample_docstrings(
         tokenizer_class=_TOKENIZER_FOR_DOC,
         checkpoint="facebook/bart-large",
@@ -1127,15 +1129,15 @@ class BartModel(PretrainedBartModel):
 
 
 @add_start_docstrings(
-    "The BART Model with a language modeling head. Can be used for summarization.", BART_START_DOCSTRING
+    "The BART Model with a language modeling head. Can be used for summarization.", DIALOGBART_START_DOCSTRING
 )
-class BartForConditionalGeneration(PretrainedBartModel):
+class DialogBartForConditionalGeneration(PretrainedDialogBartModel):
     base_model_prefix = "model"
     _keys_to_ignore_on_load_missing = [r"final_logits_bias", r"encoder\.version", r"decoder\.version"]
 
-    def __init__(self, config: BartConfig):
+    def __init__(self, config: DialogBartConfig):
         super().__init__(config)
-        base_model = BartModel(config)
+        base_model = DialogBartModel(config)
         self.model = base_model
         self.register_buffer("final_logits_bias", torch.zeros((1, self.model.shared.num_embeddings)))
 
@@ -1154,7 +1156,7 @@ class BartForConditionalGeneration(PretrainedBartModel):
             new_bias = torch.cat([self.final_logits_bias, extra_bias], dim=1)
         self.register_buffer("final_logits_bias", new_bias)
 
-    @add_start_docstrings_to_model_forward(BART_INPUTS_DOCSTRING)
+    @add_start_docstrings_to_model_forward(DIALOGBART_INPUTS_DOCSTRING)
     @replace_return_docstrings(output_type=Seq2SeqLMOutput, config_class=_CONFIG_FOR_DOC)
     @add_end_docstrings(BART_GENERATION_EXAMPLE)
     def forward(
@@ -1182,11 +1184,11 @@ class BartForConditionalGeneration(PretrainedBartModel):
         Conditional generation example::
 
             >>> # Mask filling only works for bart-large
-            >>> from transformers import BartTokenizer, BartForConditionalGeneration
-            >>> tokenizer = BartTokenizer.from_pretrained('facebook/bart-large')
+            >>> from transformers import DialogBartTokenizer, DialogBartForConditionalGeneration
+            >>> tokenizer = DialogBartTokenizer.from_pretrained('facebook/bart-large')
             >>> TXT = "My friends are <mask> but they eat too many carbs."
 
-            >>> model = BartForConditionalGeneration.from_pretrained('facebook/bart-large')
+            >>> model = DialogBartForConditionalGeneration.from_pretrained('facebook/bart-large')
             >>> input_ids = tokenizer([TXT], return_tensors='pt')['input_ids']
             >>> logits = model(input_ids).logits
 
@@ -1287,13 +1289,13 @@ class BartForConditionalGeneration(PretrainedBartModel):
     Bart model with a sequence classification/head on top (a linear layer on top of the pooled output) e.g. for GLUE
     tasks.
     """,
-    BART_START_DOCSTRING,
+    DIALOGBART_START_DOCSTRING,
 )
-class BartForSequenceClassification(PretrainedBartModel):
-    def __init__(self, config: BartConfig, **kwargs):
+class DialogBartForSequenceClassification(PretrainedDialogBartModel):
+    def __init__(self, config: DialogBartConfig, **kwargs):
         super().__init__(config, **kwargs)
-        self.model = BartModel(config)
-        self.classification_head = BartClassificationHead(
+        self.model = DialogBartModel(config)
+        self.classification_head = DialogBartClassificationHead(
             config.d_model,
             config.d_model,
             config.num_labels,
@@ -1302,7 +1304,7 @@ class BartForSequenceClassification(PretrainedBartModel):
         self.model._init_weights(self.classification_head.dense)
         self.model._init_weights(self.classification_head.out_proj)
 
-    @add_start_docstrings_to_model_forward(BART_INPUTS_DOCSTRING)
+    @add_start_docstrings_to_model_forward(DIALOGBART_INPUTS_DOCSTRING)
     @add_code_sample_docstrings(
         tokenizer_class=_TOKENIZER_FOR_DOC,
         checkpoint="facebook/bart-large",
@@ -1376,21 +1378,21 @@ class BartForSequenceClassification(PretrainedBartModel):
     BART Model with a span classification head on top for extractive question-answering tasks like SQuAD (a linear
     layer on top of the hidden-states output to compute `span start logits` and `span end logits`).
     """,
-    BART_START_DOCSTRING,
+    DIALOGBART_START_DOCSTRING,
 )
-class BartForQuestionAnswering(PretrainedBartModel):
+class DialogBartForQuestionAnswering(PretrainedDialogBartModel):
     def __init__(self, config):
         super().__init__(config)
 
         config.num_labels = 2
         self.num_labels = config.num_labels
 
-        self.model = BartModel(config)
+        self.model = DialogBartModel(config)
         self.qa_outputs = nn.Linear(config.hidden_size, config.num_labels)
 
         self.model._init_weights(self.qa_outputs)
 
-    @add_start_docstrings_to_model_forward(BART_INPUTS_DOCSTRING)
+    @add_start_docstrings_to_model_forward(DIALOGBART_INPUTS_DOCSTRING)
     @add_code_sample_docstrings(
         tokenizer_class=_TOKENIZER_FOR_DOC,
         checkpoint="facebook/bart-large",

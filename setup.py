@@ -56,7 +56,7 @@ from setuptools import find_packages, setup
 
 
 # Remove stale transformers.egg-info directory to avoid https://github.com/pypa/pip/issues/5466
-stale_egg_info = Path(__file__).parent / "transformers.egg-info"
+stale_egg_info = Path(__file__).parent / "dialogbart.egg-info"
 if stale_egg_info.exists():
     print(
         (
@@ -229,27 +229,21 @@ install_requires = [
 ]
 
 setup(
-    name="transformers",
-    version="4.1.0.dev0",
-    author="Thomas Wolf, Lysandre Debut, Victor Sanh, Julien Chaumond, Sam Shleifer, Patrick von Platen, Sylvain Gugger, Google AI Language Team Authors, Open AI team Authors, Facebook AI Authors, Carnegie Mellon University Authors",
-    author_email="thomas@huggingface.co",
-    description="State-of-the-art Natural Language Processing for TensorFlow 2.0 and PyTorch",
+    name="dialogbart",
+    version="0.0.1",
+    author="Song Wang",
+    author_email="sonwang@microsoft.com",
+    description="BART adapted for conversation data",
     long_description=open("README.md", "r", encoding="utf-8").read(),
     long_description_content_type="text/markdown",
-    keywords="NLP deep learning transformer pytorch tensorflow BERT GPT GPT-2 google openai CMU",
+    keywords="BART, conversation, Microsoft",
     license="Apache",
-    url="https://github.com/huggingface/transformers",
+    url="https://github.com/songwanguw/dialogbart",
     package_dir={"": "src"},
     packages=find_packages("src"),
-    extras_require=extras,
-    entry_points={"console_scripts": ["transformers-cli=transformers.commands.transformers_cli:main"]},
     python_requires=">=3.6.0",
-    install_requires=install_requires,
     classifiers=[
-        "Development Status :: 5 - Production/Stable",
-        "Intended Audience :: Developers",
-        "Intended Audience :: Education",
-        "Intended Audience :: Science/Research",
+        "Development Status :: 1 - Under development",
         "License :: OSI Approved :: Apache Software License",
         "Operating System :: OS Independent",
         "Programming Language :: Python :: 3",
@@ -257,5 +251,8 @@ setup(
         "Programming Language :: Python :: 3.7",
         "Topic :: Scientific/Engineering :: Artificial Intelligence",
     ],
-    cmdclass={"deps_table_update": DepsTableUpdateCommand},
 )
+
+#    extras_require=extras,
+#    install_requires=install_requires,
+#    cmdclass={"deps_table_update": DepsTableUpdateCommand},

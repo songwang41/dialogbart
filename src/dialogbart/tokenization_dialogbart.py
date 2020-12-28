@@ -17,7 +17,7 @@ from typing import List, Optional
 
 from transformers import add_start_docstrings
 
-from ..utils import logging
+from transformers.utils import logging
 from transformers import BartTokenizer
 
 

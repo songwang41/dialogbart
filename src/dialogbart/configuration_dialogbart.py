@@ -14,8 +14,8 @@
 # limitations under the License.
 """ BART configuration """
 
-from transformations import BartConfig
-from ..utils import logging
+from transformers import BartConfig
+from transformers.utils import logging
 
 
 logger = logging.get_logger(__name__)
@@ -69,8 +69,9 @@ class DialogBartConfig(BartConfig):
             >>> model = BartModel(config)
 
         """
-        if "hidden_size" in common_kwargs:
+        if "hidden_size" in kwargs:
             raise ValueError("hidden size is called d_model")
-        super().__init__(
-            turn_idx=turn_token_id, max_turn_embeddings=max_turn_embeddings,max_speaker_embeddings=max_speaker_embeddings,**kwargs
-        )
+        super().__init__(turn_token_id=turn_token_id, 
+        max_turn_embeddings=max_turn_embeddings, 
+        max_speaker_embeddings=max_speaker_embeddings,
+        **kwargs )

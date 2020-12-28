@@ -2,23 +2,21 @@
 # There's no way to ignore "F401 '...' imported but unused" warnings in this
 # module, but to preserve other warnings. So, don't check this module at all.
 
-from ...file_utils import is_tf_available, is_tokenizers_available, is_torch_available
-from .configuration_bart import BartConfig
-from .tokenization_bart import BartTokenizer
+from transformers.file_utils import is_tf_available, is_tokenizers_available, is_torch_available
+from .configuration_dialogbart import DialogBartConfig
+from .tokenization_dialogbart import DialogBartTokenizer
 
 
 if is_tokenizers_available():
-    from .tokenization_bart_fast import BartTokenizerFast
+    from .tokenization_dialogbart_fast import DialogBartTokenizerFast
 
 if is_torch_available():
-    from .modeling_bart import (
-        BART_PRETRAINED_MODEL_ARCHIVE_LIST,
-        BartForConditionalGeneration,
-        BartForQuestionAnswering,
-        BartForSequenceClassification,
-        BartModel,
-        PretrainedBartModel,
+    from .modeling_dialogbart import (
+        DIALOGBART_PRETRAINED_MODEL_ARCHIVE_LIST,
+        DialogBartForConditionalGeneration,
+        DialogBartForQuestionAnswering,
+        DialogBartForSequenceClassification,
+        DialogBartModel,
+        PretrainedDialogBartModel,
     )
 
-if is_tf_available():
-    from .modeling_tf_bart import TFBartForConditionalGeneration, TFBartModel
