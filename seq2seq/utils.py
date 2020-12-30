@@ -144,7 +144,7 @@ class AbstractSeq2SeqDataset(Dataset):
 
     @staticmethod
     def get_char_lens(data_file):
-        return [len(x) for x in Path(data_file).open().readlines()]
+        return [len(x) for x in Path(data_file).open(encoding='utf-8').readlines()]
 
     @cached_property
     def tgt_lens(self):
