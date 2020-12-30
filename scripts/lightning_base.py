@@ -21,6 +21,16 @@ from transformers import (
     PretrainedConfig,
     PreTrainedTokenizer,
 )
+from dialogbart import(
+    DialogBartConfig,
+    DialogBartTokenizer,
+    DIALOGBART_PRETRAINED_MODEL_ARCHIVE_LIST,
+    DialogBartForConditionalGeneration,
+    DialogBartForQuestionAnswering,
+    DialogBartForSequenceClassification,
+    DialogBartModel,
+    PretrainedDialogBartModel,
+)
 from transformers.optimization import (
     Adafactor,
     get_cosine_schedule_with_warmup,
@@ -42,10 +52,10 @@ MODEL_MODES = {
     "pretraining": AutoModelForPreTraining,
     "token-classification": AutoModelForTokenClassification,
     "language-modeling": AutoModelWithLMHead,
-    "summarization": AutoModelForSeq2SeqLM,
+    "summarization": DialogBartForConditionalGeneration, 
     "translation": AutoModelForSeq2SeqLM,
 }
-
+#AutoModelForSeq2SeqLM,
 
 # update this and the import above to support new schedulers from transformers.optimization
 arg_to_scheduler = {
@@ -84,7 +94,7 @@ class BaseTransformer(pl.LightningModule):
         self.output_dir = Path(self.hparams.output_dir)
         cache_dir = self.hparams.cache_dir if self.hparams.cache_dir else None
         if config is None:
-            self.config = AutoConfig.from_pretrained(
+            self.config = DialogBartConfig.from_pretrained(
                 self.hparams.config_name if self.hparams.config_name else self.hparams.model_name_or_path,
                 **({"num_labels": num_labels} if num_labels is not None else {}),
                 cache_dir=cache_dir,
@@ -100,14 +110,14 @@ class BaseTransformer(pl.LightningModule):
                 setattr(self.config, p, getattr(self.hparams, p))
 
         if tokenizer is None:
-            self.tokenizer = AutoTokenizer.from_pretrained(
+            self.tokenizer = DialogBartTokenizer.from_pretrained(
                 self.hparams.tokenizer_name if self.hparams.tokenizer_name else self.hparams.model_name_or_path,
                 cache_dir=cache_dir,
             )
         else:
             self.tokenizer: PreTrainedTokenizer = tokenizer
         self.model_type = MODEL_MODES[mode]
-        print(f"-------------Song : {self.model_type} ----------------------")
+        print(f"------------- Song : {self.model_type} ----------------------")
         if model is None:
             self.model = self.model_type.from_pretrained(
                 self.hparams.model_name_or_path,
