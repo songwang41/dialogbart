@@ -1028,7 +1028,7 @@ class LearnedSpeakerEmbeddingV2(nn.Embedding):
 
     def __init__(self, num_embeddings: int, embedding_dim: int, padding_idx: int, turn_token_id: int, roles_map: dict, offset: int = 2):
         self.turn_token_id = turn_token_id
-        self.roles_map roles_map #{"| Agent"} = { 18497: 1, 19458:2}
+        self.roles_map = roles_map
         assert turn_token_id is not None
         assert padding_idx is not None
         num_embeddings += offset # embedding 0 is reserved for paddings
