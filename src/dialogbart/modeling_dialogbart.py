@@ -311,6 +311,7 @@ class DialogBartEncoder(nn.Module):
         self.embed_scale = math.sqrt(embed_dim) if config.scale_embedding else 1.0
         self.padding_idx = embed_tokens.padding_idx
         self.turn_token_id = config.turn_token_id
+        self.roles_map = config.roles_map
         self.max_source_positions = config.max_position_embeddings
         self.max_turn_embeddings = config.max_turn_embeddings
         self.max_speaker_embeddings = config.max_speaker_embeddings
@@ -336,11 +337,12 @@ class DialogBartEncoder(nn.Module):
                 self.turn_token_id,
                 config.extra_pos_embeddings,
             )
-            self.embed_speakers = LearnedSpeakerEmbedding(
+            self.embed_speakers = LearnedSpeakerEmbeddingV2(
                 config.max_speaker_embeddings,
                 embed_dim,
                 self.padding_idx,
                 self.turn_token_id,
+                self.roles_map,
                 config.extra_pos_embeddings,
             )
 
@@ -989,6 +991,85 @@ class LearnedSpeakerEmbedding(nn.Embedding):
         #turn_ids = turn_ids.to(self.weight.device)
         return super().forward(spaker_ids)
 
+
+class LearnedSpeakerEmbeddingV2(nn.Embedding):
+    """
+    This module learns Turn position embeddings up to a fixed maximum size. Padding ids are ignored by setting
+    the embedding as 0.0's
+    >>> speaker_embs = LearnedSpeakerEmbedding(10, 3, 1, 1721)
+    >>> text = " Issue | Agent : a  | Customer : b b | Agent : c c"
+    >>> input_ids = tokenizer([text], return_tensors='pt',padding="max_length", max_length = 20)['input_ids']
+    tensor([[    0, 25422,  1721, 18497,  4832,    10,  1437,  1721, 19458,  4832,
+           741,   741,  1721, 18497,  4832,   740,   740,     2,     1,     1]])
+    >>> speaker_embs.get_speaker_ids(input_ids)
+    tensor([[0, 0, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 2, 2, 2, 2, 2, 2, 1, 1]])
+    >>> speaker_embs(input_ids)
+    tensor([[[ 1.2214, -2.1971,  0.1446],
+         [ 1.2214, -2.1971,  0.1446],
+         [-1.0182,  0.3928,  1.5586],
+         [-1.0182,  0.3928,  1.5586],
+         [-1.0182,  0.3928,  1.5586],
+         [-1.0182,  0.3928,  1.5586],
+         [-1.0182,  0.3928,  1.5586],
+         [-0.3213, -0.8318, -0.6791],
+         [-0.3213, -0.8318, -0.6791],
+         [-0.3213, -0.8318, -0.6791],
+         [-0.3213, -0.8318, -0.6791],
+         [-0.3213, -0.8318, -0.6791],
+         [-1.0182,  0.3928,  1.5586],
+         [-1.0182,  0.3928,  1.5586],
+         [-1.0182,  0.3928,  1.5586],
+         [-1.0182,  0.3928,  1.5586],
+         [-1.0182,  0.3928,  1.5586],
+         [-1.0182,  0.3928,  1.5586],
+         [ 0.0000,  0.0000,  0.0000],
+         [ 0.0000,  0.0000,  0.0000]]], grad_fn=<EmbeddingBackward>)
+    """
+
+    def __init__(self, num_embeddings: int, embedding_dim: int, padding_idx: int, turn_token_id: int, roles_map: dict, offset: int = 2):
+        self.turn_token_id = turn_token_id
+        self.roles_map roles_map #{"| Agent"} = { 18497: 1, 19458:2}
+        assert turn_token_id is not None
+        assert padding_idx is not None
+        num_embeddings += offset # embedding 0 is reserved for paddings
+        super().__init__(num_embeddings, embedding_dim, padding_idx=padding_idx)
+
+    def get_speaker_ids(self, input_ids):
+        # TODO: speed up
+        arr = torch.zeros(input_ids.shape).to(input_ids.device)
+        idxes_of_turn_token = torch.where(input_ids==self.turn_token_id)
+        rows, cols = idxes_of_turn_token[0], idxes_of_turn_token[1]
+        roles_map = {} #mapping role to id, e.g. agent to 1, customer to 2
+        for i in range(len(rows)):
+            x, y = rows[i].item(), cols[i].item()
+            #next position
+            if i+1 < len(rows):
+                x1, y1 = (rows[i+1].item(), cols[i+1].item())
+            else:
+                x1, y1 = -1, -1
+            role = input_ids[x][y+1].item()
+            if not role in roles_map:
+                roles_map[role] = len(roles_map)+1
+            if x1 == x:
+                arr[x][y:y1] = roles_map[role]
+            else:
+                arr[x][y:] = roles_map[role]
+        if arr[0][0] == 0: # the beginning part is not starting with a speaker symbol e.g. " Issue | Agent: ", the speaker part starts with 2
+            arr[arr>0] += 1
+        elif arr[0][0] ==1: # the beginning part is starting with a speaker symbol e.g. " | Agent: ", shift to start with 2
+            arr += 1
+        arr[arr >= self.num_embeddings] = self.num_embeddings -1 #truncate to make sure not exceeding the num_embeddings
+        arr[input_ids==self.padding_idx] = 1 # bart is using padding_idx = 1
+        return arr.type(torch.long)
+
+    def forward(self, input_ids, use_cache=False):
+        """Input is expected to be of size [bsz x seqlen].
+        Output is speaker embeddings of size [bsz x seqlen x emb_dim].
+        """
+        # turn id should start from 1, 0 is save for padding_idx
+        spaker_ids = self.get_speaker_ids(input_ids) #same device as input_ids
+        #turn_ids = turn_ids.to(self.weight.device)
+        return super().forward(spaker_ids)
 
 def LayerNorm(normalized_shape, eps=1e-5, elementwise_affine=True):
     if torch.cuda.is_available():
