@@ -56,6 +56,7 @@ class DialogBartConfig(BartConfig):
         turn_token_id=1721,
         max_turn_embeddings=150,
         max_speaker_embeddings=10,
+        speaker_ids = [18497,19458],
         **kwargs
     ):
         r"""
@@ -74,4 +75,5 @@ class DialogBartConfig(BartConfig):
         super().__init__(turn_token_id=turn_token_id, 
         max_turn_embeddings=max_turn_embeddings, 
         max_speaker_embeddings=max_speaker_embeddings,
+        speaker_ids = speaker_ids,
         **kwargs )
