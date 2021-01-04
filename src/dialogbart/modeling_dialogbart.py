@@ -311,7 +311,7 @@ class DialogBartEncoder(nn.Module):
         self.embed_scale = math.sqrt(embed_dim) if config.scale_embedding else 1.0
         self.padding_idx = embed_tokens.padding_idx
         self.turn_token_id = config.turn_token_id
-        self.roles = config.roles
+        self.speaker_ids = config.speaker_ids
         self.max_source_positions = config.max_position_embeddings
         self.max_turn_embeddings = config.max_turn_embeddings
         self.max_speaker_embeddings = config.max_speaker_embeddings
