@@ -337,6 +337,7 @@ class DialogBartEncoder(nn.Module):
                 self.turn_token_id,
                 config.extra_pos_embeddings,
             )
+        if len(self.speaker_ids) > 0:
             self.embed_speakers = LearnedSpeakerEmbeddingV2(
                 config.max_speaker_embeddings,
                 embed_dim,
@@ -379,8 +380,11 @@ class DialogBartEncoder(nn.Module):
 
         if self.turn_token_id is not None:
             embed_t = self.embed_turns(input_ids)
+            x += embed_t
+    
+        if len(self.speaker_ids) > 0:
             ebmed_s = self.embed_speakers(input_ids)
-            x = x + embed_t + ebmed_s
+            x += ebmed_s
 
         x = self.layernorm_embedding(x)
         x = F.dropout(x, p=self.dropout, training=self.training)
