@@ -311,7 +311,7 @@ class DialogBartEncoder(nn.Module):
         self.embed_scale = math.sqrt(embed_dim) if config.scale_embedding else 1.0
         self.padding_idx = embed_tokens.padding_idx
         self.turn_token_id = config.turn_token_id
-        self.roles_map = config.roles_map
+        self.roles = config.roles
         self.max_source_positions = config.max_position_embeddings
         self.max_turn_embeddings = config.max_turn_embeddings
         self.max_speaker_embeddings = config.max_speaker_embeddings
@@ -342,7 +342,7 @@ class DialogBartEncoder(nn.Module):
                 embed_dim,
                 self.padding_idx,
                 self.turn_token_id,
-                self.roles_map,
+                self.speaker_ids,
                 config.extra_pos_embeddings,
             )
 
@@ -959,7 +959,7 @@ class LearnedSpeakerEmbedding(nn.Embedding):
         arr = torch.zeros(input_ids.shape).to(input_ids.device)
         idxes_of_turn_token = torch.where(input_ids==self.turn_token_id)
         rows, cols = idxes_of_turn_token[0], idxes_of_turn_token[1]
-        roles_map = {} #batch-wise
+        speaker_map = {} #batch-wise
         for i in range(len(rows)):
             x, y = rows[i].item(), cols[i].item()
             #next position
@@ -968,12 +968,12 @@ class LearnedSpeakerEmbedding(nn.Embedding):
             else:
                 x1, y1 = -1, -1
             role = input_ids[x][y+1].item()
-            if not role in roles_map:
-                roles_map[role] = len(roles_map)+1
+            if not role in speaker_map:
+                speaker_map[role] = len(speaker_map)+1
             if x1 == x:
-                arr[x][y:y1] = roles_map[role]
+                arr[x][y:y1] = speaker_map[role]
             else:
-                arr[x][y:] = roles_map[role]
+                arr[x][y:] = speaker_map[role]
         if arr[0][0] ==0: # the beginning part is not starting with a speaker symbol e.g. " Issue | Agent: ", the speaker part starts with 2
             arr[arr>0] += 1
         elif arr[0][0] ==1: # the beginning part is starting with a speaker symbol e.g. " | Agent: ", shift to start with 2
@@ -1026,11 +1026,12 @@ class LearnedSpeakerEmbeddingV2(nn.Embedding):
          [ 0.0000,  0.0000,  0.0000]]], grad_fn=<EmbeddingBackward>)
     """
 
-    def __init__(self, num_embeddings: int, embedding_dim: int, padding_idx: int, turn_token_id: int, roles_map: dict, offset: int = 2):
+    def __init__(self, num_embeddings: int, embedding_dim: int, padding_idx: int, turn_token_id: int, speaker_ids: list, offset: int = 2):
         self.turn_token_id = turn_token_id
-        self.roles_map = roles_map
-        assert turn_token_id is not None
-        assert padding_idx is not None
+        self.speaker_map = {}
+        for k, v in enumerate(speaker_ids):
+            self.speaker_map[v] = k + 1 
+        self.num_defined_roles = len(self.speaker_map)
         num_embeddings += offset # embedding 0 is reserved for paddings
         super().__init__(num_embeddings, embedding_dim, padding_idx=padding_idx)
 
@@ -1039,24 +1040,26 @@ class LearnedSpeakerEmbeddingV2(nn.Embedding):
         arr = torch.zeros(input_ids.shape).to(input_ids.device)
         idxes_of_turn_token = torch.where(input_ids==self.turn_token_id)
         rows, cols = idxes_of_turn_token[0], idxes_of_turn_token[1]
-        roles_map = {} #mapping role to id, e.g. agent to 1, customer to 2
+        
         for i in range(len(rows)):
             x, y = rows[i].item(), cols[i].item()
-            #next position
+            # check next position
             if i+1 < len(rows):
                 x1, y1 = (rows[i+1].item(), cols[i+1].item())
             else:
                 x1, y1 = -1, -1
             role = input_ids[x][y+1].item()
-            if not role in roles_map:
-                roles_map[role] = len(roles_map)+1
+            if not role in self.speaker_map:
+                self.speaker_map[role] = self.num_defined_roles + 1
             if x1 == x:
-                arr[x][y:y1] = roles_map[role]
+                # same row
+                arr[x][y:y1] = self.speaker_map[role] 
             else:
-                arr[x][y:] = roles_map[role]
-        if arr[0][0] == 0: # the beginning part is not starting with a speaker symbol e.g. " Issue | Agent: ", the speaker part starts with 2
+                # a new row
+                arr[x][y:] = self.speaker_map[role] 
+        if arr[0][0] == 0: # e.g. " Issue | Agent: ", the speaker part starts with 2
             arr[arr>0] += 1
-        elif arr[0][0] ==1: # the beginning part is starting with a speaker symbol e.g. " | Agent: ", shift to start with 2
+        elif arr[0][0] ==1: # e.g. " | Agent: ", shift to start with 2
             arr += 1
         arr[arr >= self.num_embeddings] = self.num_embeddings -1 #truncate to make sure not exceeding the num_embeddings
         arr[input_ids==self.padding_idx] = 1 # bart is using padding_idx = 1
