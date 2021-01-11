@@ -242,13 +242,12 @@ setup(
     package_dir={"": "src"},
     packages=find_packages("src"),
     python_requires=">=3.6.0",
+    install_requires=["transformers==4.1.0"],
     classifiers=[
         "Development Status :: 1 - Under development",
-        "License :: OSI Approved :: Apache Software License",
+        "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.6",
-        "Programming Language :: Python :: 3.7",
         "Topic :: Scientific/Engineering :: Artificial Intelligence",
     ],
 )
