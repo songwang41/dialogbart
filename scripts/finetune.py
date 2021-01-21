@@ -439,7 +439,7 @@ def main(args, model=None) -> SummarizationModule:
         return model
 
     model.hparams.test_checkpoint = ""
-    checkpoints = list(sorted(glob.glob(os.path.join(args.output_dir, "*.ckpt"), reverse=True)))
+    checkpoints = list(sorted(glob.glob(os.path.join(args.output_dir, "*.ckpt"), recursive=True)))
     if checkpoints:
         model.hparams.test_checkpoint = checkpoints[-1]
         trainer.resume_from_checkpoint = checkpoints[-1]
