@@ -853,6 +853,10 @@ class LearnedTurnEmbedding(nn.Embedding):
     """
     This module learns Turn position embeddings up to a fixed maximum size. Padding ids are ignored by setting
     the embedding as 0.0's
+    >>> import torch
+    >>> from torch import nn
+    >>> from transformers import BartTokenizer
+    >>> tokenizer = BartTokenizer.from_pretrained("facebook/bart-large")
     >>> turn_embs = LearnedTurnEmbedding(150, 3, 1, 1721)
     >>> text = " Issue | Agent : a  | Customer b b | Agent c c"
     >>> input_ids = tokenizer([text], return_tensors='pt',padding="max_length", max_length = 20)['input_ids']
@@ -887,7 +891,7 @@ class LearnedTurnEmbedding(nn.Embedding):
         self.turn_token_id = turn_token_id 
         assert turn_token_id is not None
         assert padding_idx is not None
-        num_embeddings += offset #embedding 0 is reserved for paddings
+        num_embeddings += offset # embedding 1  (offset -1) is reserved for padding
         super().__init__(num_embeddings, embedding_dim, padding_idx=padding_idx)
 
     #turn_token_id = tokenizer.convert_tokens_to_ids('Ġ|')
@@ -901,7 +905,7 @@ class LearnedTurnEmbedding(nn.Embedding):
             turn_ids = turn_ids + 2
         elif  turn_ids[0][0] == 1:
             turn_ids = turn_ids + 1
-        turn_ids = turn_ids *(input_ids != self.padding_idx) #setting padding turn as 0
+        turn_ids[input_ids == self.padding_idx ] = 1 # setting padding turn as 1
         turn_ids[turn_ids >= self.num_embeddings] = self.num_embeddings-1 # truncate number of turns at self.num_embeddings
         turn_ids = turn_ids.type(torch.long)
         return turn_ids
@@ -953,7 +957,7 @@ class LearnedSpeakerEmbedding(nn.Embedding):
         self.turn_token_id = turn_token_id
         assert turn_token_id is not None
         assert padding_idx is not None
-        num_embeddings += offset # embedding 0 is reserved for paddings
+        num_embeddings += offset # embedding 1  (offset -1) is reserved for padding
         super().__init__(num_embeddings, embedding_dim, padding_idx=padding_idx)
 
     #turn_token_id = tokenizer.convert_tokens_to_ids('Ġ|')
@@ -1036,7 +1040,7 @@ class LearnedSpeakerEmbeddingV2(nn.Embedding):
         for k, v in enumerate(speaker_ids):
             self.speaker_map[v] = k + 1 
         self.num_defined_roles = len(self.speaker_map)
-        num_embeddings += offset # embedding 0 is reserved for paddings
+        num_embeddings += offset # embedding 1  (offset -1) is reserved for padding
         super().__init__(num_embeddings, embedding_dim, padding_idx=padding_idx)
 
     def get_speaker_ids(self, input_ids):
@@ -1065,7 +1069,7 @@ class LearnedSpeakerEmbeddingV2(nn.Embedding):
             arr[arr>0] += 1
         elif arr[0][0] ==1: # e.g. " | Agent: ", shift to start with 2
             arr += 1
-        arr[arr >= self.num_embeddings] = self.num_embeddings -1 #truncate to make sure not exceeding the num_embeddings
+        arr[arr >= self.num_embeddings] = self.num_embeddings -1 # truncate to make sure not exceeding the num_embeddings
         arr[input_ids==self.padding_idx] = 1 # bart is using padding_idx = 1
         return arr.type(torch.long)
 
