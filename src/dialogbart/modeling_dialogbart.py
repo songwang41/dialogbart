@@ -1004,7 +1004,7 @@ class LearnedSpeakerEmbeddingV2(nn.Embedding):
     """
     This module learns Turn position embeddings up to a fixed maximum size. Padding ids are ignored by setting
     the embedding as 0.0's
-    >>> speaker_embs = LearnedSpeakerEmbedding(10, 3, 1, 1721)
+    >>> speaker_embs = LearnedSpeakerEmbeddingV2(10, 3, 1, 1721, [18497,19458])
     >>> text = " Issue | Agent : a  | Customer : b b | Agent : c c"
     >>> input_ids = tokenizer([text], return_tensors='pt',padding="max_length", max_length = 20)['input_ids']
     tensor([[    0, 25422,  1721, 18497,  4832,    10,  1437,  1721, 19458,  4832,

@@ -49,6 +49,7 @@ class DialogBartConfig(BartConfig):
             The maximum number of turns this model might ever be used with.
         max_speaker_embeddings: (:obj:`int`, `optional`, defaults to 10):
             The maximum number of different speakers this model might ever be used with.
+        speaker_ids: the token ids of ['ĠAgent', 'ĠCustomer'] in BartTokenizer
     """
     model_type = "dialogbart"
     def __init__(
@@ -61,11 +62,10 @@ class DialogBartConfig(BartConfig):
     ):
         r"""
         :class:`~transformers.BartConfig` is the configuration class for `BartModel`.
-
+    
         Examples::
 
-            >>> from transformers import BartConfig, BartModel
-
+            >>> from dialogbart import BartConfig, DialogBartModel
             >>> config = BartConfig.from_pretrained('facebook/bart-large')
             >>> model = BartModel(config)
 
