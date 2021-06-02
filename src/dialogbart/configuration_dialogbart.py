@@ -58,6 +58,7 @@ class DialogBartConfig(BartConfig):
         max_turn_embeddings=150,
         max_speaker_embeddings=10,
         speaker_ids = [18497,19458],
+        hierarchical_layers = 1,
         **kwargs
     ):
         r"""

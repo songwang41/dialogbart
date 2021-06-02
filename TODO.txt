@@ -1,0 +1,36 @@
+"""
+    This module learns Turn position embeddings up to a fixed maximum size. Padding ids are ignored by setting
+    the embedding as 0.0's
+    >>> speaker_embs = LearnedSpeakerEmbeddingV2(10, 3, 1, 1721, [18497,19458])
+    >>> text = " Issue | Agent : a  | Customer : b b | Agent : c c"
+    >>> input_ids = tokenizer([text], return_tensors='pt',padding="max_length", max_length = 20)['input_ids']
+    tensor([[    0, 25422,  1721, 18497,  4832,    10,  1437,  1721, 19458,  4832,
+           741,   741,  1721, 18497,  4832,   740,   740,     2,     1,     1]])
+    >>> speaker_embs.get_speaker_ids(input_ids)
+    tensor([[0, 0, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 2, 2, 2, 2, 2, 2, 1, 1]])
+    >>> speaker_embs(input_ids)
+    tensor([[[ 1.2214, -2.1971,  0.1446],
+         [ 1.2214, -2.1971,  0.1446],
+         [-1.0182,  0.3928,  1.5586],
+         [-1.0182,  0.3928,  1.5586],
+         [-1.0182,  0.3928,  1.5586],
+         [-1.0182,  0.3928,  1.5586],
+         [-1.0182,  0.3928,  1.5586],
+         [-0.3213, -0.8318, -0.6791],
+         [-0.3213, -0.8318, -0.6791],
+         [-0.3213, -0.8318, -0.6791],
+         [-0.3213, -0.8318, -0.6791],
+         [-0.3213, -0.8318, -0.6791],
+         [-1.0182,  0.3928,  1.5586],
+         [-1.0182,  0.3928,  1.5586],
+         [-1.0182,  0.3928,  1.5586],
+         [-1.0182,  0.3928,  1.5586],
+         [-1.0182,  0.3928,  1.5586],
+         [-1.0182,  0.3928,  1.5586],
+         [ 0.0000,  0.0000,  0.0000],
+         [ 0.0000,  0.0000,  0.0000]]], grad_fn=<EmbeddingBackward>)
+"""
+    # Shall the first non-conversation segment taking the same embedding as the pad_token, i.e. taking 0.0's
+
+
+How is dropout working exactly?

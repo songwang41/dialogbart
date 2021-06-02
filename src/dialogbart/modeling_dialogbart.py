@@ -1033,6 +1033,7 @@ class LearnedSpeakerEmbeddingV2(nn.Embedding):
          [ 0.0000,  0.0000,  0.0000],
          [ 0.0000,  0.0000,  0.0000]]], grad_fn=<EmbeddingBackward>)
     """
+##TODO: Shall the first non-conversation segment taking the same embedding as the pad_token, i.e. taking 0.0's
 
     def __init__(self, num_embeddings: int, embedding_dim: int, padding_idx: int, turn_token_id: int, speaker_ids: list, offset: int = 2):
         self.turn_token_id = turn_token_id
