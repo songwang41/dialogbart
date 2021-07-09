@@ -58,7 +58,7 @@ class DialogBartConfig(BartConfig):
         max_turn_embeddings=150,
         max_speaker_embeddings=10,
         speaker_ids = [18497,19458],
-        hierarchical_layers = 1,
+        hierarchical_encoder_layers = 2,
         **kwargs
     ):
         r"""
@@ -77,4 +77,5 @@ class DialogBartConfig(BartConfig):
         max_turn_embeddings=max_turn_embeddings, 
         max_speaker_embeddings=max_speaker_embeddings,
         speaker_ids = speaker_ids,
+        hierarchical_encoder_layers = hierarchical_encoder_layers,
         **kwargs )

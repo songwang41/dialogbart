@@ -32,6 +32,7 @@ from transformers.file_utils import (
     replace_return_docstrings,
 )
 from transformers.modeling_outputs import (
+    ModelOutput,
     BaseModelOutput,
     BaseModelOutputWithPastAndCrossAttentions,
     Seq2SeqLMOutput,
@@ -291,6 +292,96 @@ class EncoderLayer(nn.Module):
             x = torch.clamp(x, min=-clamp_value, max=clamp_value)
         return x, attn_weights
 
+class HierarchialEncoderLayer(nn.Module):
+    def __init__(self, config: DialogBartConfig):
+        super().__init__()
+        self.embed_dim = config.d_model
+        self.self_attn = Attention(self.embed_dim, config.encoder_attention_heads, dropout=config.attention_dropout)
+        self.normalize_before = config.normalize_before
+        self.self_attn_layer_norm = LayerNorm(self.embed_dim)
+        self.dropout = config.dropout
+        self.activation_fn = ACT2FN[config.activation_function]
+        self.activation_dropout = config.activation_dropout
+        self.fc1 = nn.Linear(self.embed_dim, config.encoder_ffn_dim)
+        self.fc2 = nn.Linear(config.encoder_ffn_dim, self.embed_dim)
+        self.final_layer_norm = LayerNorm(self.embed_dim)
+
+    def forward(self, x, encoder_padding_mask, output_attentions=False):
+        """
+        Args:
+            x (Tensor): input to the layer of shape `(seq_len, batch, embed_dim)`
+            encoder_padding_mask (ByteTensor): binary ByteTensor of shape
+                `(batch, src_len)` where padding elements are indicated by ``1``.
+            for t_tgt, t_src is excluded (or masked out), =0 means it is
+            included in attention
+
+        Returns:
+            encoded output of shape `(seq_len, batch, embed_dim)`
+        """
+        residual = x
+        if self.normalize_before:
+            x = self.self_attn_layer_norm(x)
+        x, attn_weights = self.self_attn(
+            query=x, key=x, key_padding_mask=encoder_padding_mask, output_attentions=output_attentions
+        )
+        x = F.dropout(x, p=self.dropout, training=self.training)
+        x = residual + x
+        if not self.normalize_before:
+            x = self.self_attn_layer_norm(x)
+
+        residual = x
+        if self.normalize_before:
+            x = self.final_layer_norm(x)
+        x = self.activation_fn(self.fc1(x))
+        x = F.dropout(x, p=self.activation_dropout, training=self.training)
+        x = self.fc2(x)
+        x = F.dropout(x, p=self.dropout, training=self.training)
+        x = residual + x
+        if not self.normalize_before:
+            x = self.final_layer_norm(x)
+        if torch.isinf(x).any() or torch.isnan(x).any():
+            clamp_value = torch.finfo(x.dtype).max - 1000
+            x = torch.clamp(x, min=-clamp_value, max=clamp_value)
+        return x, attn_weights
+
+
+@dataclass
+class HierarchicalEncoderModelOutput(ModelOutput):
+    """
+    Base class for outputs of Hierarchical encoders. #Song#: Need to edit
+    Args:
+        loss (:obj:`torch.FloatTensor` of shape :obj:`(1,)`, `optional`, returned when ``labels`` is provided):
+            Language modeling loss.
+        mc_loss (:obj:`torch.FloatTensor` of shape :obj:`(1,)`, `optional`, returned when :obj:`mc_labels` is provided):
+            Multiple choice classification loss.
+        logits (:obj:`torch.FloatTensor` of shape :obj:`(batch_size, num_choices, sequence_length, config.vocab_size)`):
+            Prediction scores of the language modeling head (scores for each vocabulary token before SoftMax).
+        mc_logits (:obj:`torch.FloatTensor` of shape :obj:`(batch_size, num_choices)`):
+            Prediction scores of the multiple choice classification head (scores for each choice before SoftMax).
+        past_key_values (:obj:`Tuple[Tuple[torch.Tensor]]`, `optional`, returned when ``use_cache=True`` is passed or when ``config.use_cache=True``):
+            Tuple of length :obj:`config.n_layers`, containing tuples of tensors of shape :obj:`(batch_size, num_heads,
+            sequence_length, embed_size_per_head)`).
+            Contains pre-computed hidden-states (key and values in the attention blocks) that can be used (see
+            :obj:`past_key_values` input) to speed up sequential decoding.
+        hidden_states (:obj:`tuple(torch.FloatTensor)`, `optional`, returned when ``output_hidden_states=True`` is passed or when ``config.output_hidden_states=True``):
+            Tuple of :obj:`torch.FloatTensor` (one for the output of the embeddings + one for the output of each layer)
+            of shape :obj:`(batch_size, sequence_length, hidden_size)`.
+            Hidden-states of the model at the output of each layer plus the initial embedding outputs.
+        attentions (:obj:`tuple(torch.FloatTensor)`, `optional`, returned when ``output_attentions=True`` is passed or when ``config.output_attentions=True``):
+            Tuple of :obj:`torch.FloatTensor` (one for each layer) of shape :obj:`(batch_size, num_heads,
+            sequence_length, sequence_length)`.
+            GPT2Attentions weights after the attention softmax, used to compute the weighted average in the
+            self-attention heads.
+    """
+
+    loss: Optional[torch.FloatTensor] = None
+    mc_loss: Optional[torch.FloatTensor] = None
+    logits: torch.FloatTensor = None
+    mc_logits: torch.FloatTensor = None
+    past_key_values: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
+    hidden_states: Optional[Tuple[torch.FloatTensor]] = None
+    attentions: Optional[Tuple[torch.FloatTensor]] = None
+
 
 class DialogBartEncoder(nn.Module):
     """
@@ -348,6 +439,7 @@ class DialogBartEncoder(nn.Module):
             )
 
         self.layers = nn.ModuleList([EncoderLayer(config) for _ in range(config.encoder_layers)])
+        self.hierarchical_layers = nn.ModuleList([EncoderLayer(config) for _ in range(config.hierarchical_encoder_layers)])
         self.layernorm_embedding = LayerNorm(embed_dim) if config.normalize_embedding else nn.Identity()
         # mbart has one extra layer_norm
         self.layer_norm = LayerNorm(config.d_model) if config.add_final_layer_norm else None
@@ -418,10 +510,46 @@ class DialogBartEncoder(nn.Module):
         if output_hidden_states:
             encoder_states = encoder_states + (x,)
 
-        if not return_dict:
-            return tuple(v for v in [x, encoder_states, all_attentions] if v is not None)
-        return BaseModelOutput(last_hidden_state=x, hidden_states=encoder_states, attentions=all_attentions)
+        # Hierarchical layers part:
+        is_turn_ids = input_ids.eq(config.turn_token_id)
+        num_turns = torch.sum(is_turn_ids, dim=1)
+        y = torch.zeros(x.size(0), max(num_turns).item(), x.size(2))
+        for i in range(input_states.size(0)):
+            y[i, :num_turns[i],:] = input_states[i,turn_ids,:]
 
+        y = y.transpose(0, 1) # B x Turn x C -> Turn x B x C
+
+        hierarchical_encoder_states = () if output_hidden_states else None
+        hierarchical_all_attentions = () if output_attentions else None
+        for hierarchical_encoder_layer in self.hierarchical_layers:
+            if output_hidden_states:
+                y = y.transpose(0, 1)  # T x B x C -> B x T x C
+                hierarchical_encoder_states = hierarchical_encoder_states + (y,)
+                y = y.transpose(0, 1)  # B x T x C -> T x B x C
+            y, attn = hierarchical_encoder_layer(y, attention_mask, output_attentions=output_attentions)
+            if output_attentions:
+                hierarchical_all_attentions = hierarchical_all_attentions + (attn,)
+        
+        y = y.transpose(0, 1) # Turn x B x C -> B x Turn x C
+
+        if self.layer_norm:
+            y = self.layer_norm(y)
+
+        if output_hidden_states:
+            hierarchical_encoder_states = hierarchical_encoder_states + (y,)
+
+        if not return_dict:
+            return tuple(
+                v for v in [x, encoder_states, all_attentions, y, 
+                hierarchical_encoder_states, all_attentions_all_attentions] if v is not None
+                )
+        #return BaseModelOutput(last_hidden_state=x, hidden_states=encoder_states, attentions=all_attentions)
+        return ModelOutput(last_hidden_state=x, 
+        hidden_states=encoder_states, 
+        attentions=all_attentions, 
+        last_hidden_state_hierarchical = y, 
+        hidden_states_hierarchical=hierarchical_encoder_states, 
+        attentions_hierarchical=all_attentions_all_attentions)
 
 class DecoderLayer(nn.Module):
     def __init__(self, config: DialogBartConfig):
@@ -446,6 +574,13 @@ class DecoderLayer(nn.Module):
             encoder_decoder_attention=True,
         )
         self.encoder_attn_layer_norm = LayerNorm(self.embed_dim)
+        self.hierarchical_encoder_attn = Attention(
+            self.embed_dim,
+            config.decoder_attention_heads,
+            dropout=config.attention_dropout,
+            encoder_decoder_attention=True,
+        )
+        self.hierarchical_encoder_attn_layer_norm = LayerNorm(self.embed_dim)
         self.fc1 = nn.Linear(self.embed_dim, config.decoder_ffn_dim)
         self.fc2 = nn.Linear(config.decoder_ffn_dim, self.embed_dim)
         self.final_layer_norm = LayerNorm(self.embed_dim)
@@ -454,8 +589,11 @@ class DecoderLayer(nn.Module):
         self,
         x,
         encoder_hidden_states,
+        hierarchical_encoder_hidden_states,
         encoder_attn_mask=None,
+        hierarchical_encoder_attn_mask=None,
         layer_state=None,
+        hierarchical_layer_state=None,
         causal_mask=None,
         decoder_padding_mask=None,
         output_attentions=False,
@@ -497,6 +635,26 @@ class DecoderLayer(nn.Module):
         if not self.normalize_before:
             x = self.encoder_attn_layer_norm(x)
 
+        # Cross-Atention Block for Hierachical part
+        residual = x
+        ##?? what is the cached_key
+        ##?? what is hierarchical_layer_state
+        ##?? how to added hierarchical_encoder_attn_mask
+        assert self.hierarchical_encoder_attn.cache_key != self.self_attn.cache_key
+        if self.normalize_before:
+            x = self.hierarchical_encoder_attn_layer_norm(x)
+        x, hierarchical_cross_attn_weights = self.hierarchical_encoder_attn(
+            query=x,
+            key=hierarchical_encoder_hidden_states,
+            key_padding_mask=hierarchical_encoder_attn_mask,
+            layer_state=hierarchical_layer_state,  # mutates layer state
+            output_attentions=output_attentions,
+        )
+        x = F.dropout(x, p=self.dropout, training=self.training)
+        x = residual + x
+        if not self.normalize_before:
+            x = self.hierarchical_encoder_attn_layer_norm(x)
+
         # Fully Connected
         residual = x
         if self.normalize_before:
@@ -513,7 +671,47 @@ class DecoderLayer(nn.Module):
             self_attn_weights,
             layer_state,
             cross_attn_weights,
+            hierarchical_layer_state,
+            hierarchical_cross_attn_weights
         )  # layer_state = cache for decoding
+
+@dataclass
+class HierarchicalEncoderModelOutput(ModelOutput):
+    """
+    Base class for outputs of Hierarchical encoders.
+    Args:
+        loss (:obj:`torch.FloatTensor` of shape :obj:`(1,)`, `optional`, returned when ``labels`` is provided):
+            Language modeling loss.
+        mc_loss (:obj:`torch.FloatTensor` of shape :obj:`(1,)`, `optional`, returned when :obj:`mc_labels` is provided):
+            Multiple choice classification loss.
+        logits (:obj:`torch.FloatTensor` of shape :obj:`(batch_size, num_choices, sequence_length, config.vocab_size)`):
+            Prediction scores of the language modeling head (scores for each vocabulary token before SoftMax).
+        mc_logits (:obj:`torch.FloatTensor` of shape :obj:`(batch_size, num_choices)`):
+            Prediction scores of the multiple choice classification head (scores for each choice before SoftMax).
+        past_key_values (:obj:`Tuple[Tuple[torch.Tensor]]`, `optional`, returned when ``use_cache=True`` is passed or when ``config.use_cache=True``):
+            Tuple of length :obj:`config.n_layers`, containing tuples of tensors of shape :obj:`(batch_size, num_heads,
+            sequence_length, embed_size_per_head)`).
+            Contains pre-computed hidden-states (key and values in the attention blocks) that can be used (see
+            :obj:`past_key_values` input) to speed up sequential decoding.
+        hidden_states (:obj:`tuple(torch.FloatTensor)`, `optional`, returned when ``output_hidden_states=True`` is passed or when ``config.output_hidden_states=True``):
+            Tuple of :obj:`torch.FloatTensor` (one for the output of the embeddings + one for the output of each layer)
+            of shape :obj:`(batch_size, sequence_length, hidden_size)`.
+            Hidden-states of the model at the output of each layer plus the initial embedding outputs.
+        attentions (:obj:`tuple(torch.FloatTensor)`, `optional`, returned when ``output_attentions=True`` is passed or when ``config.output_attentions=True``):
+            Tuple of :obj:`torch.FloatTensor` (one for each layer) of shape :obj:`(batch_size, num_heads,
+            sequence_length, sequence_length)`.
+            GPT2Attentions weights after the attention softmax, used to compute the weighted average in the
+            self-attention heads.
+    """
+
+    loss: Optional[torch.FloatTensor] = None
+    mc_loss: Optional[torch.FloatTensor] = None
+    logits: torch.FloatTensor = None
+    mc_logits: torch.FloatTensor = None
+    past_key_values: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
+    hidden_states: Optional[Tuple[torch.FloatTensor]] = None
+    attentions: Optional[Tuple[torch.FloatTensor]] = None
+
 
 
 class DialogDecoder(nn.Module):
@@ -701,7 +899,7 @@ class Attention(nn.Module):
         self.k_proj = nn.Linear(embed_dim, embed_dim, bias=bias)
         self.v_proj = nn.Linear(embed_dim, embed_dim, bias=bias)
         self.q_proj = nn.Linear(embed_dim, embed_dim, bias=bias)
-        self.out_proj = nn.Linear(embed_dim, embed_dim, bias=bias)
+        self.out_proj = nn.Linear(embed_dim, embed_dim, bias=bias) #Song# what is this?
         self.cache_key = "encoder_decoder" if self.encoder_decoder_attention else "self"
 
     def _shape(self, tensor, seq_len, bsz):
@@ -1033,7 +1231,6 @@ class LearnedSpeakerEmbeddingV2(nn.Embedding):
          [ 0.0000,  0.0000,  0.0000],
          [ 0.0000,  0.0000,  0.0000]]], grad_fn=<EmbeddingBackward>)
     """
-##TODO: Shall the first non-conversation segment taking the same embedding as the pad_token, i.e. taking 0.0's
 
     def __init__(self, num_embeddings: int, embedding_dim: int, padding_idx: int, turn_token_id: int, speaker_ids: list, offset: int = 2):
         self.turn_token_id = turn_token_id
@@ -1182,6 +1379,23 @@ class DialogBartModel(PretrainedDialogBartModel):
             )
 
         # decoder outputs consists of (dec_features, layer_state, dec_hidden, dec_attn)
+        # Song: 
+        '''
+        def forward(
+        self,
+        input_ids,
+        encoder_hidden_states,
+        encoder_padding_mask,
+        decoder_padding_mask,
+        decoder_causal_mask,
+        past_key_values=None,
+        use_cache=False,
+        output_attentions=False,
+        output_hidden_states=False,
+        return_dict=True,
+    )'''
+        
+        
         decoder_outputs = self.decoder(
             decoder_input_ids,
             encoder_outputs[0],
