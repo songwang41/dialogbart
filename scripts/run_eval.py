@@ -59,10 +59,10 @@ def generate_summaries_or_translations(
     
     sum_tokenized_length=0
     max_tokenized_length=0
-    min_tokenized_length=0
+    min_tokenized_length=200
     sum_tokenized_length_batch=0
     max_tokenized_length_batch=0
-    min_tokenized_length_batch=0
+    min_tokenized_length_batch=200
     n_batch=0 
     for examples_chunk in tqdm(list(chunks(examples, batch_size))):
         n_batch += 1
