@@ -59,8 +59,10 @@ def generate_summaries_or_translations(
     
     sum_tokenized_length=0
     max_tokenized_length=0
+    min_tokenized_length=0
     sum_tokenized_length_batch=0
     max_tokenized_length_batch=0
+    min_tokenized_length_batch=0
     n_batch=0 
     for examples_chunk in tqdm(list(chunks(examples, batch_size))):
         n_batch += 1
@@ -73,6 +75,7 @@ def generate_summaries_or_translations(
         )
         sum_tokenized_length_batch +=summaries.size(1)
         max_tokenized_length_batch = max(max_tokenized_length_batch, summaries.size(1))
+        min_tokenized_length_batch = min(min_tokenized_length_batch, summaries.size(1))
         dec = tokenizer.batch_decode(summaries, skip_special_tokens=True, clean_up_tokenization_spaces=False)
         for hypothesis in dec:
             fout.write(hypothesis + "\n")
@@ -80,12 +83,18 @@ def generate_summaries_or_translations(
             length_hyp=len(tokenizer.tokenize(hypothesis))
             sum_tokenized_length += length_hyp
             max_tokenized_length = max(max_tokenized_length,length_hyp)
+            min_tokenized_length = min(min_tokenized_length,length_hyp)
     fout.close()
     runtime = int(time.time() - start_time)  # seconds
     n_obs = len(examples)
     return dict(n_obs=n_obs, runtime=runtime, seconds_per_sample=round(runtime / n_obs, 4), 
-    average_gen_len=round(sum_tokenized_length/n_obs, 2), max_gen_length=max_tokenized_length,
-    average_gen_len_batch=round(sum_tokenized_length_batch/n_batch, 2), max_gen_length_batch=max_tokenized_length_batch)
+    average_gen_len=round(sum_tokenized_length/n_obs, 2), 
+    max_gen_length=max_tokenized_length,
+    min_gen_length=min_tokenized_length,
+    average_gen_len_batch=round(sum_tokenized_length_batch/n_batch, 2), 
+    max_gen_length_batch=max_tokenized_length_batch,
+    min_gen_length_batch=min_tokenized_length_batch
+    )
 
 
 def datetime_now():
