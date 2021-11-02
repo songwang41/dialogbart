@@ -3,6 +3,19 @@ from collections import Counter, defaultdict
 import nltk
 #nltk_tokens = nltk.word_tokenize(word_data)
 
+nlp = spacy.load("en_core_web_sm")
+
+def spacy_tokenize(text, return_pos=False, nouns_verbs_only=False):
+    doc = nlp(text)
+    if not return_pos:
+        return [token.text for token in doc]
+    else:
+        # the tags can help us to focus nouns and verbs only
+        tokens = [token.text for token in doc if token.pos_ in ['VERB', 'NOUN']]
+        #tags = [token.pos_ for token in doc]
+        return tokens
+
+
 class NovelWords:
     def __init__(self, source_file, target_file, output_tsv_file=None, 
     sep_or_tokenizer=" ", jargon_words_file=None):
@@ -16,6 +29,7 @@ class NovelWords:
         else:
             self.jargon_words = []
         assert len(self.src_texts) == len(self.tgt_texts)
+
         #record the frequency of novel words
         self.novel_tokens=defaultdict(int)
         #record the ratio of novel words in each <src,tgt> pair
@@ -33,11 +47,14 @@ class NovelWords:
             return text.split()
         elif self.sep_or_tokenizer == "nltk":
             return  nltk.word_tokenize(text)
+        elif self.sep_or_tokenizer == "spacy":
+            return  spacy_tokenize(text)
+        elif self.sep_or_tokenizer == "gpt2":
+            return  self.sep_or_tokenizer.tokenize(text)
         else:
             assert False, "sep_or_tokenizer should be in ' ' or 'nltk'"
 
     def process_one_pair(self, src_text, tgt_text):
-
         tgt_tokens = self.tokenize(tgt_text)
         src_tokens = self.tokenize(src_text)
         tgt_tokens_count = Counter(tgt_tokens)
@@ -118,4 +135,13 @@ python calculate_novel_words.py \
 --output_tsv_file val_novel_words_frequency_nltk_restricted.tsv \
 --sep_or_tokenizer nltk \
 --jargon_words_file jargon_words_nltk.txt
+'''
+
+'''
+python calculate_novel_words.py \
+--source_file data/train_dev_conv_sum/eval_data/human_eval_round3/final_sampled_data_mixed_subset_cols_gpt3_input.source \
+--target_file data/train_dev_conv_sum/eval_data/human_eval_round3/final_sampled_data_mixed_subset_cols_gpt3_input.target \
+--output_tsv_file output/val_novel_words_frequency_spacy.tsv \
+--sep_or_tokenizer spacy
+
 '''
