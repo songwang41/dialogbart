@@ -14,6 +14,11 @@ def convert(src_path: str, map_location: str = "cpu", save_path: Union[str, None
         if not isinstance(v, torch.Tensor):
             raise TypeError("FP16 conversion only works on paths that are saved state dicts, like pytorch_model.bin")
         state_dict[k] = v.half()
+
+    # 'model.encoder.embed_tokens.weight', 'model.decoder.embed_tokens.weight', 'model.shared.weight' should point to same vector
+    state_dict['model.encoder.embed_tokens.weight'] = state_dict['model.shared.weight']
+    state_dict['model.decoder.embed_tokens.weight'] = state_dict['model.shared.weight']
+    
     if save_path is None:  # overwrite src_path
         save_path = src_path
     torch.save(state_dict, save_path)
