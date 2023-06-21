@@ -230,7 +230,7 @@ install_requires = [
 
 setup(
     name="dialogbart",
-    version="0.0.3",
+    version="0.0.4",
     author="Song Wang",
     author_email="sonwang@microsoft.com",
     description="BART adapted for conversation data",
