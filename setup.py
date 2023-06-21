@@ -242,7 +242,7 @@ setup(
     package_dir={"": "src"},
     packages=find_packages("src"),
     python_requires=">=3.6.0",
-    install_requires=["transformers==4.3.*"],
+    install_requires=["transformers==4.30.*"],
     classifiers=[
         "Development Status :: 1 - Under development",
         "License :: OSI Approved :: MIT License",
