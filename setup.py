@@ -230,7 +230,7 @@ install_requires = [
 
 setup(
     name="dialogbart",
-    version="0.0.4",
+    version="0.0.5",
     author="Song Wang",
     author_email="sonwang@microsoft.com",
     description="BART adapted for conversation data",
@@ -242,7 +242,7 @@ setup(
     package_dir={"": "src"},
     packages=find_packages("src"),
     python_requires=">=3.6.0",
-    install_requires=["transformers==4.1.*"],
+    install_requires=["transformers==4.3.*"],
     classifiers=[
         "Development Status :: 1 - Under development",
         "License :: OSI Approved :: MIT License",
