@@ -1121,7 +1121,7 @@ class DialogBartModel(PretrainedDialogBartModel):
 
     @add_start_docstrings_to_model_forward(DIALOGBART_INPUTS_DOCSTRING)
     @add_code_sample_docstrings(
-        tokenizer_class=_TOKENIZER_FOR_DOC,
+        # tokenizer_class=_TOKENIZER_FOR_DOC,
         checkpoint="facebook/bart-large",
         output_type=Seq2SeqModelOutput,
         config_class=_CONFIG_FOR_DOC,
@@ -1335,21 +1335,21 @@ class DialogBartForConditionalGeneration(PretrainedDialogBartModel):
         )
 
     def prepare_inputs_for_generation(
-        self, decoder_input_ids, past=None, attention_mask=None, use_cache=None, encoder_outputs=None, **kwargs
+        self, decoder_input_ids, past_key_values=None, attention_mask=None, use_cache=None, encoder_outputs=None, **kwargs
     ):
         return {
             "input_ids": None,  # encoder_outputs is defined. input_ids not needed
             "encoder_outputs": encoder_outputs,
-            "past_key_values": past,
+            "past_key_values": past_key_values,
             "decoder_input_ids": decoder_input_ids,
             "attention_mask": attention_mask,
             "use_cache": use_cache,  # change this to avoid caching (presumably for debugging)
         }
 
-    def adjust_logits_during_generation(self, logits, cur_len, max_length):
+    def adjust_logits_during_generation(self, logits, cur_len):
         if cur_len == 1 and self.config.force_bos_token_to_be_generated:
             self._force_token_id_to_be_generated(logits, self.config.bos_token_id)
-        elif cur_len == max_length - 1 and self.config.eos_token_id is not None:
+        elif cur_len == self.config.max_length - 1 and self.config.eos_token_id is not None:
             self._force_token_id_to_be_generated(logits, self.config.eos_token_id)
         return logits
 
@@ -1398,7 +1398,7 @@ class DialogBartForSequenceClassification(PretrainedDialogBartModel):
 
     @add_start_docstrings_to_model_forward(DIALOGBART_INPUTS_DOCSTRING)
     @add_code_sample_docstrings(
-        tokenizer_class=_TOKENIZER_FOR_DOC,
+        # tokenizer_class=_TOKENIZER_FOR_DOC,
         checkpoint="facebook/bart-large",
         output_type=Seq2SeqSequenceClassifierOutput,
         config_class=_CONFIG_FOR_DOC,
@@ -1486,7 +1486,7 @@ class DialogBartForQuestionAnswering(PretrainedDialogBartModel):
 
     @add_start_docstrings_to_model_forward(DIALOGBART_INPUTS_DOCSTRING)
     @add_code_sample_docstrings(
-        tokenizer_class=_TOKENIZER_FOR_DOC,
+        # tokenizer_class=_TOKENIZER_FOR_DOC,
         checkpoint="facebook/bart-large",
         output_type=Seq2SeqQuestionAnsweringModelOutput,
         config_class=_CONFIG_FOR_DOC,
