@@ -1,10 +1,8 @@
 # DialogBart: BART (seq2seq) struncture adapted for conversation data
 
-This is currently under development.
-
 The package will be used for conversational text modeling, including language modeling, text generation.
 
-
+It is the foundation model behind this paper: https://arxiv.org/abs/2204.12951
 # Developments
 
 ## add speaker embedding
